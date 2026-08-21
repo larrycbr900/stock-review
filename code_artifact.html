@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票交易復盤可視化工作台</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2canvas for JPEG generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <style>
+        body {
+            font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+            background-color: #f1f5f9;
+        }
+
+        /* 輸入框通用樣式去除邊框，只留底線 */
+        .input-line {
+            border: none;
+            border-bottom: 2px dashed #94a3b8;
+            background-color: transparent;
+            border-radius: 0;
+            outline: none;
+            width: 100%;
+            transition: border-color 0.2s ease;
+        }
+        .input-line:focus {
+            border-bottom-color: #3b82f6;
+        }
+
+        /* 隱藏日期的預設圖標以保持簡潔 */
+        input[type="date"]::-webkit-inner-spin-button,
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            opacity: 0.5;
+        }
+
+        /* 檔案上傳隱藏 */
+        input[type="file"] {
+            display: none;
+        }
+
+        /* ===== JPEG 匯出專用樣式鎖定 ===== */
+        /* 在產生截圖的瞬間，強制鎖定寬度與行高，防止排版走位與文字被切斷 */
+        .img-export-mode {
+            width: 1200px !important;
+            max-width: 1200px !important;
+            margin: 0 auto !important;
+            transform: none !important;
+        }
+        .img-export-mode input {
+            line-height: normal !important;
+            padding-bottom: 4px !important;
+        }
+        /* 解決 Flexbox 在舊版瀏覽器或 html2canvas 的偶發錯誤 */
+        .img-export-mode .flex-1 {
+            flex: 1 1 auto !important;
+        }
+        .img-export-mode .sm\:flex-row {
+            flex-direction: row !important;
+        }
+    </style>
+</head>
+<body class="text-slate-800 p-4 md:p-8">
+
+    <!-- 頂部控制面板 -->
+    <div class="max-w-[1200px] mx-auto mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div class="flex items-center gap-3">
+            <div class="bg-blue-600 text-white p-2.5 rounded-lg">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold text-slate-800">股票交易復盤可視化工作台</h1>
+                <p class="text-xs text-slate-500">線上填寫交易數據 · 粘貼 K 線圖表 · 檢討行為心理 · 一鍵下載高畫質 JPEG 檔</p>
+            </div>
+        </div>
+        <div class="flex gap-3">
+            <button onclick="resetForm()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                清空表格
+            </button>
+            <button id="exportBtn" onclick="exportToImage()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors text-sm flex items-center gap-2 shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                一鍵匯出 JPEG 長圖
+            </button>
+        </div>
+    </div>
+
+    <!-- 表單擷取範圍開始 -->
+    <div id="capture-area" class="max-w-[1200px] mx-auto bg-white shadow-lg border border-slate-200 pb-8 rounded-b-lg">
+        
+        <!-- Header Banner -->
+        <div class="bg-gradient-to-r from-slate-900 to-blue-900 text-white p-6 flex justify-between items-center rounded-t-lg">
+            <div>
+                <h1 class="text-2xl font-bold tracking-wide flex items-center gap-2">
+                    📈 股票個別交易紀錄與深度復盤表
+                </h1>
+                <p class="text-blue-200 text-sm mt-1 tracking-wider">TRADE LOG & POST-TRADE PSYCHOLOGY REVIEW JOURNAL</p>
+            </div>
+            <div class="text-right flex flex-col gap-2 items-end">
+                <div class="flex items-center gap-2 text-sm bg-blue-100 rounded pl-2 pr-1 py-1">
+                    <span class="text-blue-800 font-bold">交易編號:</span>
+                    <input type="text" id="trade_id" placeholder="如: TR-2026-01" class="bg-transparent border-none outline-none text-black font-bold w-32 placeholder-slate-400 text-right">
+                </div>
+                <div class="flex items-center gap-2 text-sm">
+                    <span class="text-slate-300">復盤日期:</span>
+                    <input type="date" id="review_date" class="bg-slate-800/50 border border-slate-700 rounded px-2 py-1 text-white outline-none focus:border-blue-500 w-36">
+                </div>
+            </div>
+        </div>
+
+        <div class="p-8 space-y-6">
+            
+            <!-- 1. 基本交易數據 -->
+            <div>
+                <h2 class="text-lg font-bold text-slate-800 border-l-4 border-blue-600 pl-2 mb-3">1. 基本交易數據 (BASIC TRADE DATA)</h2>
+                <div class="border border-slate-300 rounded-lg overflow-hidden flex flex-col">
+                    
+                    <!-- Row 1 -->
+                    <div class="flex flex-col md:flex-row border-b border-slate-300">
+                        <div class="w-full md:w-1/2 p-3 md:p-4 border-r border-slate-300 flex flex-col justify-end">
+                            <span class="text-xs font-bold text-slate-500 mb-2">股票名稱 / 代碼</span>
+                            <div class="flex items-end gap-2">
+                                <input type="text" id="stock_symbol" placeholder="如: AAPL" class="input-line text-lg font-bold text-blue-700 pb-1 flex-1" onblur="fetchStockPrice()">
+                                <button onclick="fetchStockPrice()" class="text-xs bg-slate-100 border border-slate-300 px-2 py-1 rounded hover:bg-slate-200 text-slate-600 whitespace-nowrap flex items-center gap-1 mb-1">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>更新
+                                </button>
+                            </div>
+                        </div>
+                        <div class="w-full md:w-1/2 p-3 md:p-4 flex flex-col justify-end">
+                            <span class="text-xs font-bold text-slate-500 mb-2">交易方向 / 策略</span>
+                            <div class="flex flex-wrap items-center gap-4 text-sm font-bold text-slate-700 pb-1">
+                                <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="direction" class="w-4 h-4 text-blue-600"> 做多</label>
+                                <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="direction" class="w-4 h-4 text-blue-600"> 做空</label>
+                                <span class="text-slate-300">|</span>
+                                <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 波段</label>
+                                <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 日內</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 2 -->
+                    <div class="flex flex-col md:flex-row border-b border-slate-300 bg-slate-50/50">
+                        <div class="w-full md:w-1/2 flex border-r border-slate-300">
+                            <div class="w-1/2 p-3 md:p-4 border-r border-slate-300 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">買入日期</span>
+                                <input type="date" id="buy_date" class="input-line text-sm font-bold text-slate-800 pb-1">
+                            </div>
+                            <div class="w-1/2 p-3 md:p-4 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">買入價格</span>
+                                <div class="flex items-center text-sm font-bold text-slate-800">
+                                    <input type="number" id="buy_price" placeholder="0.00" class="input-line pb-1 text-left" oninput="calculate()">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="w-full md:w-1/2 flex">
+                            <div class="w-1/2 p-3 md:p-4 border-r border-slate-300 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">買入股數</span>
+                                <div class="flex items-center text-sm font-bold text-slate-800">
+                                    <input type="number" id="buy_qty" placeholder="1000" class="input-line pb-1 text-left" oninput="calculate()">
+                                </div>
+                            </div>
+                            <div class="w-1/2 p-3 md:p-4 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">買入總額</span>
+                                <div class="flex items-center text-sm font-bold text-slate-800">
+                                    <input type="text" id="buy_total" placeholder="自動計算" class="input-line pb-1 text-left bg-slate-100 text-slate-500 border-none px-2" readonly>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 3 -->
+                    <div class="flex flex-col md:flex-row border-b border-slate-300">
+                        <div class="w-full md:w-1/2 flex border-r border-slate-300">
+                            <div class="w-1/2 p-3 md:p-4 border-r border-slate-300 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">賣出日期</span>
+                                <input type="date" id="sell_date" class="input-line text-sm font-bold text-slate-800 pb-1">
+                            </div>
+                            <div class="w-1/2 p-3 md:p-4 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">賣出價格</span>
+                                <div class="flex items-center text-sm font-bold text-slate-800">
+                                    <input type="number" id="sell_price" placeholder="0.00" class="input-line pb-1 text-left" oninput="calculate()">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="w-full md:w-1/2 flex">
+                            <div class="w-1/2 p-3 md:p-4 border-r border-slate-300 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">實際盈虧 (金額)</span>
+                                <div class="flex items-center text-sm font-bold text-slate-800">
+                                    <span class="mr-1 text-slate-400">$</span>
+                                    <input type="text" id="pnl_amount" placeholder="0.00" class="input-line pb-1 text-left font-bold border-none bg-slate-50 px-2" readonly>
+                                </div>
+                            </div>
+                            <div class="w-1/2 p-3 md:p-4 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">實際盈虧 (%)</span>
+                                <div class="flex items-center text-sm font-bold text-slate-800">
+                                    <input type="text" id="pnl_percent" placeholder="0.0%" class="input-line pb-1 text-left font-bold border-none bg-slate-50 px-2" readonly>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Row 4 -->
+                    <div class="flex flex-col md:flex-row bg-slate-50/50">
+                        <div class="w-full md:w-1/2 flex border-r border-slate-300">
+                            <div class="w-1/2 p-3 md:p-4 border-r border-slate-300 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-red-600 mb-2">預設止損位</span>
+                                <div class="flex items-center text-sm font-bold text-red-600">
+                                    <input type="number" id="stop_loss" placeholder="0.00" class="input-line pb-1 text-left text-red-600" oninput="calculate()">
+                                </div>
+                            </div>
+                            <div class="w-1/2 p-3 md:p-4 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-green-600 mb-2">預設目標位</span>
+                                <div class="flex items-center text-sm font-bold text-green-600">
+                                    <input type="number" id="target_price" placeholder="0.00" class="input-line pb-1 text-left text-green-600" oninput="calculate()">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="w-full md:w-1/2 flex">
+                            <div class="w-1/2 p-3 md:p-4 border-r border-slate-300 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">預期 R:R (1:X)</span>
+                                <div class="flex items-center text-sm font-bold text-blue-600">
+                                    <span class="mr-1">1 :</span>
+                                    <input type="text" id="expected_rr" placeholder="0.0" class="input-line pb-1 text-left font-bold border-none bg-blue-50 px-2 text-blue-700" readonly>
+                                </div>
+                            </div>
+                            <div class="w-1/2 p-3 md:p-4 flex flex-col justify-end">
+                                <span class="text-xs font-bold text-slate-500 mb-2">實際報酬 R</span>
+                                <div class="flex items-center text-sm font-bold text-blue-600">
+                                    <input type="text" id="actual_r" placeholder="0.0" class="input-line pb-1 text-left font-bold border-none bg-blue-50 px-2 text-blue-700" readonly>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 大市環境與技術信號 -->
+            <div>
+                <h2 class="text-lg font-bold text-slate-800 border-l-4 border-blue-600 pl-2 mb-3">2. 大市環境與進場信號 (MARKET CONTEXT & SETUP)</h2>
+                <div class="border border-slate-300 rounded-lg overflow-hidden text-sm">
+                    <div class="flex border-b border-slate-300 bg-white">
+                        <div class="w-1/6 bg-slate-100 p-3 font-bold text-slate-700 flex items-center justify-center text-center border-r border-slate-300">大市/板塊趨勢</div>
+                        <div class="w-5/6 p-3 flex flex-wrap gap-x-6 gap-y-2">
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 強勢多頭 (突破/站穩均線)</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 區間震盪 (箱體整理)</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 弱勢空頭 (跌破支撐)</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 板塊熱點龍頭</label>
+                        </div>
+                    </div>
+                    <div class="flex bg-white">
+                        <div class="w-1/6 bg-slate-100 p-3 font-bold text-slate-700 flex items-center justify-center text-center border-r border-slate-300">買入形態/依據</div>
+                        <div class="w-5/6 p-3 flex flex-wrap gap-x-6 gap-y-2">
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 突破平台/頸線</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 均線支撐回踩</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 量價齊升/放量突破</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 左側超跌反彈</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 財報/消息催化</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. 圖表截圖區 -->
+            <div>
+                <div class="flex justify-between items-end mb-3">
+                    <h2 class="text-lg font-bold text-slate-800 border-l-4 border-blue-600 pl-2">3. 交易圖表截圖與復盤標記 (CHART SCREENSHOT)</h2>
+                    <span class="text-xs text-slate-500">建議標註: ① 買入點 ② 止損點 ③ 目標位 ④ 賣出點 ⑤ 量能變化</span>
+                </div>
+                
+                <div class="relative w-full h-[480px] bg-slate-50 border-2 border-dashed border-blue-300 hover:border-blue-500 rounded-xl transition-colors group cursor-pointer overflow-hidden flex items-center justify-center" id="chart-container" onclick="document.getElementById('chart-upload').click()">
+                    
+                    <div id="chart-placeholder" class="text-center pointer-events-none p-6">
+                        <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        </div>
+                        <p class="text-blue-800 font-bold text-lg">點擊此處上傳 K 線圖</p>
+                        <p class="text-slate-500 text-sm mt-2">或直接在區域內貼上 (Ctrl+V / Cmd+V) 截圖</p>
+                    </div>
+
+                    <img id="chart-preview" class="absolute inset-0 w-full h-full object-contain hidden" src="" alt="Chart Preview">
+                    
+                    <button id="remove-chart-btn" onclick="removeChart(event)" class="absolute top-3 right-3 bg-red-600 hover:bg-red-700 text-white rounded-full p-1.5 hidden shadow-md z-10">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                    
+                    <input type="file" id="chart-upload" accept="image/*" onchange="handleImageUpload(event)">
+                </div>
+            </div>
+
+            <!-- 4. 行為評估與心理狀態 -->
+            <div>
+                <h2 class="text-lg font-bold text-slate-800 border-l-4 border-blue-600 pl-2 mb-3">4. 買賣行為評估與心理狀態 (EXECUTION & PSYCHOLOGY)</h2>
+                <div class="border border-slate-300 rounded-lg overflow-hidden text-sm">
+                    
+                    <div class="flex border-b border-slate-300 bg-white">
+                        <div class="w-[18%] bg-slate-100 p-3 font-bold text-slate-700 flex items-center justify-center text-center border-r border-slate-300">買入行為評估</div>
+                        <div class="w-[82%] p-3 flex flex-col justify-center gap-2">
+                            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                                <span class="bg-green-100 text-green-700 border border-green-300 px-2 py-0.5 rounded font-bold text-xs whitespace-nowrap">正確行為 ✓</span>
+                                <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 符合交易計劃</label>
+                                <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 等待信號確認</label>
+                                <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 嚴控倉位風險</label>
+                                <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 盈虧比合理(>2:1)</label>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mt-1">
+                                <span class="bg-red-100 text-red-700 border border-red-300 px-2 py-0.5 rounded font-bold text-xs whitespace-nowrap">錯誤行為 ✗</span>
+                                <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 追高買入 (FOMO)</label>
+                                <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 盲目搶跑/猜底</label>
+                                <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 倉位過重/未設止損</label>
+                                <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 聽信消息衝動下單</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex border-b border-slate-300 bg-white">
+                        <div class="w-[18%] bg-slate-100 p-3 font-bold text-slate-700 flex items-center justify-center text-center border-r border-slate-300">買入心理狀態</div>
+                        <div class="w-[82%] p-3 flex flex-wrap gap-x-6 gap-y-2">
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 冷靜客觀、嚴守紀律</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 猶豫不決、缺乏信心</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 焦慮怕踏空 (FOMO)</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 急於翻本/報復交易</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 過度自信/忽視風險</label>
+                        </div>
+                    </div>
+
+                    <div class="flex bg-white">
+                        <div class="w-[18%] bg-slate-100 p-3 font-bold text-slate-700 flex items-center justify-center text-center border-r border-slate-300">持倉平倉紀律</div>
+                        <div class="w-[82%] p-3 flex flex-wrap gap-x-6 gap-y-2">
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 嚴格執行止損 (不猶豫)</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 達目標分批止盈</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 凹單死扛/下移止損</label>
+                            <label class="flex items-center gap-1.5 cursor-pointer text-slate-700"><input type="checkbox" class="w-4 h-4 rounded text-blue-600"> 微利恐慌早出</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. 復盤反思 -->
+            <div>
+                <h2 class="text-lg font-bold text-slate-800 border-l-4 border-blue-600 pl-2 mb-3">5. 事後復盤反思與行動改進 (POST-TRADE REFLECTION)</h2>
+                <div class="border border-slate-300 rounded-lg overflow-hidden bg-white flex flex-col md:flex-row">
+                    <div class="w-full md:w-1/2 border-b md:border-b-0 md:border-r border-slate-300 flex flex-col">
+                        <div class="bg-green-50 text-green-800 font-bold p-2 border-b border-slate-300 text-sm">✅ 這筆交易做得好的地方 (What went well?)</div>
+                        <textarea class="w-full p-3 resize-none outline-none text-slate-700 text-sm flex-1 min-h-[100px]" placeholder="寫下值得保持的好習慣..."></textarea>
+                    </div>
+                    <div class="w-full md:w-1/2 flex flex-col">
+                        <div class="bg-red-50 text-red-800 font-bold p-2 border-b border-slate-300 text-sm">❌ 犯的錯誤或可改進之處 (Lessons Learned)</div>
+                        <textarea class="w-full p-3 resize-none outline-none text-slate-700 text-sm flex-1 min-h-[100px]" placeholder="誠實面對並記錄失誤..."></textarea>
+                    </div>
+                </div>
+                <div class="border border-slate-300 rounded-lg overflow-hidden bg-white mt-3 flex flex-col">
+                    <div class="bg-blue-50 text-blue-800 font-bold p-2 border-b border-slate-300 text-sm">🎯 下一步改進具體行動 (Next Action Rule)</div>
+                    <textarea class="w-full p-3 resize-none outline-none text-slate-700 text-sm min-h-[80px]" placeholder="下次遇到同類情況我會..."></textarea>
+                </div>
+            </div>
+
+            <!-- 6. 買入指標與核心原則提示 -->
+            <div>
+                <h2 class="text-lg font-bold text-slate-800 border-l-4 border-blue-600 pl-2 mb-3">6. 買入指標與核心原則提示 (BUY INDICATORS & PRINCIPLES)</h2>
+                <div class="bg-slate-100/80 border border-slate-200 rounded-lg p-4">
+                    <div class="flex flex-col sm:flex-row gap-3 w-full">
+                        <div class="bg-white p-3 rounded shadow-sm border border-slate-200 flex-1 min-w-0 border-t-2 border-t-blue-500">
+                            <div class="text-slate-800 font-bold text-sm mb-1 break-words">① 趨勢 (Trend)</div>
+                            <div class="text-slate-600 text-xs leading-relaxed break-words whitespace-normal">順勢而為，絕不逆勢擋車；先定大級別方向，順大勢逆小勢。</div>
+                        </div>
+                        <div class="bg-white p-3 rounded shadow-sm border border-slate-200 flex-1 min-w-0 border-t-2 border-t-indigo-500">
+                            <div class="text-slate-800 font-bold text-sm mb-1 break-words">② 周期 (Cycle)</div>
+                            <div class="text-slate-600 text-xs leading-relaxed break-words whitespace-normal">多週期共振（大週期看方向，小週期找切入）；注意時間窗口。</div>
+                        </div>
+                        <div class="bg-white p-3 rounded shadow-sm border border-slate-200 flex-1 min-w-0 border-t-2 border-t-cyan-500">
+                            <div class="text-slate-800 font-bold text-sm mb-1 break-words">③ 技術指標 (Indicators)</div>
+                            <div class="text-slate-600 text-xs leading-relaxed break-words whitespace-normal">量價優先、均線支撐與形態共振；切忌指標繁雜過度優化。</div>
+                        </div>
+                        <div class="bg-white p-3 rounded shadow-sm border border-slate-200 flex-1 min-w-0 border-t-2 border-t-amber-500">
+                            <div class="text-slate-800 font-bold text-sm mb-1 break-words">④ 策略 (Strategy)</div>
+                            <div class="text-slate-600 text-xs leading-relaxed break-words whitespace-normal">無計劃不進場，進場即設止損；執行力大於預測，只賺系統內的錢。</div>
+                        </div>
+                        <div class="bg-white p-3 rounded shadow-sm border border-slate-200 flex-1 min-w-0 border-t-2 border-t-emerald-500">
+                            <div class="text-slate-800 font-bold text-sm mb-1 break-words">⑤ 風險管理 (Risk)</div>
+                            <div class="text-slate-600 text-xs leading-relaxed break-words whitespace-normal">單筆風險≤總資金1~2%；絕不凹單、絕不下移止損或加倉虧損。</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- Script Logic -->
+    <script>
+        // 設定今日日期
+        document.getElementById('review_date').valueAsDate = new Date();
+
+        // 貼上圖片功能
+        document.addEventListener('paste', function(e) {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (let index in items) {
+                const item = items[index];
+                if (item.kind === 'file') {
+                    const blob = item.getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        showChartPreview(event.target.result);
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            }
+        });
+
+        // 處理上傳按鈕
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    showChartPreview(e.target.result);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function showChartPreview(src) {
+            const preview = document.getElementById('chart-preview');
+            const placeholder = document.getElementById('chart-placeholder');
+            const removeBtn = document.getElementById('remove-chart-btn');
+            
+            preview.src = src;
+            preview.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+            removeBtn.classList.remove('hidden');
+        }
+
+        function removeChart(event) {
+            event.stopPropagation();
+            const preview = document.getElementById('chart-preview');
+            const placeholder = document.getElementById('chart-placeholder');
+            const removeBtn = document.getElementById('remove-chart-btn');
+            const uploadInput = document.getElementById('chart-upload');
+            
+            preview.src = "";
+            preview.classList.add('hidden');
+            placeholder.classList.remove('hidden');
+            removeBtn.classList.add('hidden');
+            uploadInput.value = "";
+        }
+
+        // 即時股價抓取 (模擬/Demo)
+        function fetchStockPrice() {
+            const symbol = document.getElementById('stock_symbol').value.trim().toUpperCase();
+            const buyPriceInput = document.getElementById('buy_price');
+            
+            if (!symbol) return;
+            
+            // 由於雅虎等 API 有 CORS 限制，這裡實作簡單的隨機價格模擬
+            console.log("Fetching price for", symbol);
+            setTimeout(() => {
+                const mockPrice = (Math.random() * 100 + 50).toFixed(2);
+                if (!buyPriceInput.value) {
+                    buyPriceInput.value = mockPrice;
+                    calculate();
+                }
+            }, 300);
+        }
+
+        // 自動計算盈虧與 R:R
+        function calculate() {
+            const buyP = parseFloat(document.getElementById('buy_price').value);
+            const sellP = parseFloat(document.getElementById('sell_price').value);
+            const qty = parseFloat(document.getElementById('buy_qty').value);
+            const stopL = parseFloat(document.getElementById('stop_loss').value);
+            const targetP = parseFloat(document.getElementById('target_price').value);
+            
+            // 計算買入總額
+            if (!isNaN(buyP) && !isNaN(qty)) {
+                document.getElementById('buy_total').value = "$" + (buyP * qty).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            } else {
+                document.getElementById('buy_total').value = "";
+            }
+
+            // 計算實際盈虧
+            const pnlAmountEl = document.getElementById('pnl_amount');
+            const pnlPercentEl = document.getElementById('pnl_percent');
+            
+            if (!isNaN(buyP) && !isNaN(sellP)) {
+                const diff = sellP - buyP;
+                const percent = (diff / buyP) * 100;
+                
+                if (!isNaN(qty)) {
+                    pnlAmountEl.value = (diff * qty).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                } else {
+                    pnlAmountEl.value = diff.toFixed(2);
+                }
+                
+                pnlPercentEl.value = percent.toFixed(2) + "%";
+                
+                if (diff >= 0) {
+                    pnlAmountEl.style.color = "#15803d"; // Green
+                    pnlPercentEl.style.color = "#15803d";
+                } else {
+                    pnlAmountEl.style.color = "#b91c1c"; // Red
+                    pnlPercentEl.style.color = "#b91c1c";
+                }
+            } else {
+                pnlAmountEl.value = "";
+                pnlPercentEl.value = "";
+            }
+
+            // 計算預期與實際 R:R
+            const expectedRrEl = document.getElementById('expected_rr');
+            const actualREl = document.getElementById('actual_r');
+
+            if (!isNaN(buyP) && !isNaN(stopL) && buyP !== stopL) {
+                const risk = Math.abs(buyP - stopL);
+                
+                // Expected RR
+                if (!isNaN(targetP)) {
+                    const reward = Math.abs(targetP - buyP);
+                    const rr = reward / risk;
+                    expectedRrEl.value = rr.toFixed(1);
+                } else {
+                    expectedRrEl.value = "";
+                }
+
+                // Actual R
+                if (!isNaN(sellP)) {
+                    const actualReward = (sellP - buyP) * (buyP > stopL ? 1 : -1);
+                    const actualR = actualReward / risk;
+                    actualREl.value = actualR.toFixed(1);
+                    
+                    actualREl.style.color = actualR >= 1 ? "#15803d" : (actualR < 0 ? "#b91c1c" : "#0f172a");
+                } else {
+                    actualREl.value = "";
+                }
+            } else {
+                expectedRrEl.value = "";
+                actualREl.value = "";
+            }
+        }
+
+        // 清空表單
+        function resetForm() {
+            document.querySelectorAll('input[type="text"], input[type="number"], textarea').forEach(el => {
+                if(el.id !== 'trade_id') el.value = '';
+            });
+            document.getElementById('buy_date').value = '';
+            document.getElementById('sell_date').value = '';
+            document.getElementById('review_date').valueAsDate = new Date();
+            document.querySelectorAll('input[type="checkbox"], input[type="radio"]').forEach(el => el.checked = false);
+            removeChart(new Event('click'));
+            calculate();
+        }
+
+        // 導出長圖 JPEG
+        async function exportToImage() {
+            const btn = document.getElementById('exportBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 正在產生圖片...';
+            btn.disabled = true;
+
+            const element = document.getElementById('capture-area');
+            
+            // 強制加上匯出鎖定樣式，防止響應式排版走位
+            element.classList.add('img-export-mode');
+
+            try {
+                // 短暫延遲讓瀏覽器有時間渲染強制寬度
+                await new Promise(r => setTimeout(r, 100));
+
+                const canvas = await html2canvas(element, {
+                    scale: 2,           // 高畫質 2x 解析度
+                    useCORS: true,      // 允許跨域圖片
+                    logging: false,
+                    backgroundColor: "#ffffff",
+                    windowWidth: 1250,  // 提供夠大的虛擬視窗寬度，避免擠壓
+                    onclone: function (clonedDoc) {
+                        // 在快取文件上強制修正 input 的行高，避免下半部被切除
+                        const inputs = clonedDoc.querySelectorAll('input');
+                        inputs.forEach(input => {
+                            if(input.type === 'date' || input.type === 'number' || input.type === 'text') {
+                                input.style.lineHeight = 'normal';
+                                input.style.paddingTop = '0';
+                            }
+                        });
+                    }
+                });
+
+                // 獲取 JPEG 圖檔資料
+                const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                
+                // 建立一個隱藏的 <a> 標籤來觸發下載
+                const link = document.createElement('a');
+                
+                // 獲取交易編號與股票代號作為檔名
+                let tradeId = document.getElementById('trade_id').value.trim() || "Trade";
+                let stockSymbol = document.getElementById('stock_symbol').value.trim().toUpperCase() || "Log";
+                
+                link.download = `${tradeId}_${stockSymbol}.jpg`;
+                link.href = imgData;
+                link.click();
+
+            } catch (error) {
+                console.error("Image generation failed", error);
+                alert("圖片產生失敗，請確認您的瀏覽器是否支援或稍後再試。");
+            } finally {
+                // 移除鎖定樣式，恢復正常螢幕自適應
+                element.classList.remove('img-export-mode');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
